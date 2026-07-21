@@ -76,17 +76,16 @@ CHECK_INTERNET () {
   fi
 }
 
-# Ask user to confirm before updating (only when -a/--ask / CONFIRM_UPDATES)
-CONFIRM_UPDATE () {   # $1 = target label, e.g. "LXC 100"
+# Run an LXC upgrade step. In confirm mode (CONFIRM_UPDATES / -a, interactive)
+# the package manager runs without an assume-yes flag, so it shows its plan and
+# asks before changing anything; otherwise it runs unattended with error capture.
+# shellcheck disable=SC2015
+PCT_UPGRADE () {   # $1 = interactive cmd (no assume-yes), $2 = unattended cmd
   if [[ "$CONFIRM_UPDATES" == true && "$HEADLESS" != true && "$RICM" != true ]]; then
-    echo -e "${OR:-}❔ Update $1?${CL:-}"
-    read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
-    if ! [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-      echo -e "⏩${BL:-} Skipped $1 by the user${CL:-}\n\n"
-      return 1
-    fi
+    pct exec "$CONTAINER" -- bash -c "$1" || true
+  else
+    pct exec "$CONTAINER" -- bash -c "$2" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$2" 2>&1) || ERROR
   fi
-  return 0
 }
 
 ARGUMENTS () {
@@ -206,7 +205,7 @@ USAGE () {
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -s --silent          Silent / Headless Mode"
-    echo -e "  -a --ask             Ask before each update (interactive confirm)"
+    echo -e "  -a --ask             Confirm package changes on upgrade (no -y)"
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
     echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
@@ -757,12 +756,18 @@ UPDATE_HOST () {
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
-  if ! CONFIRM_UPDATE "Host ($HOSTNAME)"; then return; fi
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
+  elif [[ "$CONFIRM_UPDATES" == true && "$RICM" != true ]]; then
+    echo -e "\n${OR:-}--- APT UPGRADE (confirm package changes) ---${CL:-}"
+    if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+      apt-get dist-upgrade || true
+    else
+      apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade || true
+    fi
   else
     if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}" && \
@@ -802,7 +807,6 @@ CONTAINER_UPDATE_START () {
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
       continue
     else
-      if ! CONFIRM_UPDATE "LXC $CONTAINER"; then continue; fi
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
         # Start the container
@@ -890,6 +894,13 @@ UPDATE_CONTAINER () {
       pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y" 2>&1) || ERROR
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
+    elif [[ "$CONFIRM_UPDATES" == true && "$RICM" != true ]]; then
+      echo -e "\n${OR:-}--- APT UPGRADE (confirm package changes) ---${CL:-}"
+      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade" || true
+      else
+        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade" || true
+      fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
       if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
@@ -910,7 +921,7 @@ UPDATE_CONTAINER () {
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR:-}--- DNF UPGRATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y upgrade" 2>&1) || ERROR
+    PCT_UPGRADE "dnf upgrade" "dnf -y upgrade"
     if [[ $ERROR_CODE != "" ]]; then return; fi
     echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>&1) || ERROR
@@ -920,7 +931,7 @@ UPDATE_CONTAINER () {
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$PACMAN_ENVIRONMENT pacman -Su --noconfirm" 2>&1) || ERROR
+    PCT_UPGRADE "$PACMAN_ENVIRONMENT pacman -Su" "$PACMAN_ENVIRONMENT pacman -Su --noconfirm"
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
@@ -933,7 +944,7 @@ UPDATE_CONTAINER () {
     echo
   elif [[ "$OS" =~ centos ]]; then
     echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-    pct exec "$CONTAINER" -- bash -c "yum -y update" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "yum -y update" 2>&1) || ERROR
+    PCT_UPGRADE "yum update" "yum -y update"
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
@@ -966,7 +977,6 @@ VM_UPDATE_START () {
       echo -e "⚠ ${BL:-} Skipped VM $VM${CL:-}\n"
       echo -e "${OR:-}  Windows is not supported for now.\n  I'm working on it ;)${CL:-}\n\n"
     else
-      if ! CONFIRM_UPDATE "VM $VM"; then continue; fi
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible
