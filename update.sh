@@ -76,13 +76,29 @@ CHECK_INTERNET () {
   fi
 }
 
-# Run an LXC upgrade step. In confirm mode (CONFIRM_UPDATES / -a, interactive)
-# the package manager runs without an assume-yes flag, so it shows its plan and
-# asks before changing anything; otherwise it runs unattended with error capture.
+# Ask, in the outer script (which has the terminal), whether to apply the updates
+# just listed. Returns 0 = proceed, 1 = skip. An interactive package-manager
+# prompt inside a container via `pct exec` gets no TTY - apt then assumes "yes"
+# and applies silently - so the confirmation has to happen here instead.
+ASK_PROCEED () {   # $1 = target label
+  echo -e "${OR:-}❔ Apply these updates on $1?${CL:-}"
+  read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+  [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]
+}
+
+# Run an LXC upgrade step. In confirm mode (CONFIRM_UPDATES / -a) the pending
+# updates ($1) are listed and confirmed in the outer script before applying ($2);
+# otherwise it runs unattended with error capture.
 # shellcheck disable=SC2015
-PCT_UPGRADE () {   # $1 = interactive cmd (no assume-yes), $2 = unattended cmd
+PCT_UPGRADE () {   # $1 = preview cmd, $2 = unattended upgrade cmd (with -y)
   if [[ "$CONFIRM_UPDATES" == true && "$HEADLESS" != true && "$RICM" != true ]]; then
+    echo -e "${OR:-}--- Pending updates ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "$1" || true
+    if ASK_PROCEED "LXC $CONTAINER"; then
+      pct exec "$CONTAINER" -- bash -c "$2" || true
+    else
+      echo -e "⏩${BL:-} Skipped upgrade on LXC $CONTAINER${CL:-}"
+    fi
   else
     pct exec "$CONTAINER" -- bash -c "$2" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "$2" 2>&1) || ERROR
   fi
@@ -762,11 +778,16 @@ UPDATE_HOST_ITSELF () {
     DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 2>&1) || ERROR
     if [[ $ERROR_CODE != "" ]]; then return; fi
   elif [[ "$CONFIRM_UPDATES" == true && "$RICM" != true ]]; then
-    echo -e "\n${OR:-}--- APT UPGRADE (confirm package changes) ---${CL:-}"
-    if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-      apt-get dist-upgrade || true
+    echo -e "\n${OR:-}--- Pending APT updates ---${CL:-}"
+    apt-get -s dist-upgrade 2>/dev/null | grep -E '^(Inst|Remv)' || echo "(no package changes)"
+    if ASK_PROCEED "Host ($HOSTNAME)"; then
+      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+        apt-get dist-upgrade -y || true
+      else
+        apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y || true
+      fi
     else
-      apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade || true
+      echo -e "⏩${BL:-} Skipped host upgrade${CL:-}\n"
     fi
   else
     if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
@@ -895,11 +916,16 @@ UPDATE_CONTAINER () {
       UNIFI=""
       if [[ $ERROR_CODE != "" ]]; then return; fi
     elif [[ "$CONFIRM_UPDATES" == true && "$RICM" != true ]]; then
-      echo -e "\n${OR:-}--- APT UPGRADE (confirm package changes) ---${CL:-}"
-      if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
-        pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade" || true
+      echo -e "\n${OR:-}--- Pending APT updates ---${CL:-}"
+      pct exec "$CONTAINER" -- bash -c "apt-get -s dist-upgrade 2>/dev/null | grep -E '^(Inst|Remv)' || echo '(no package changes)'" || true
+      if ASK_PROCEED "LXC $CONTAINER"; then
+        if [[ "$INCLUDE_PHASED_UPDATES" != "true" ]]; then
+          pct exec "$CONTAINER" -- bash -c "apt-get dist-upgrade -y" || true
+        else
+          pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade -y" || true
+        fi
       else
-        pct exec "$CONTAINER" -- bash -c "apt-get -o APT::Get::Always-Include-Phased-Updates=true dist-upgrade" || true
+        echo -e "⏩${BL:-} Skipped upgrade on LXC $CONTAINER${CL:-}"
       fi
     else
       echo -e "\n${OR:-}--- APT UPGRADE ---${CL:-}"
@@ -921,7 +947,7 @@ UPDATE_CONTAINER () {
       UPDATE_CHECK
   elif [[ "$OS" =~ fedora ]]; then
     echo -e "\n${OR:-}--- DNF UPGRATE ---${CL:-}"
-    PCT_UPGRADE "dnf upgrade" "dnf -y upgrade"
+    PCT_UPGRADE "dnf check-update || true" "dnf -y upgrade"
     if [[ $ERROR_CODE != "" ]]; then return; fi
     echo -e "\n${OR:-}--- DNF CLEANING ---${CL:-}"
     pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" || ERROR_CODE=$? && ID=$CONTAINER && ERROR_MSG=$(pct exec "$CONTAINER" -- bash -c "dnf -y autoremove" 2>&1) || ERROR
@@ -931,7 +957,7 @@ UPDATE_CONTAINER () {
     UPDATE_CHECK
   elif [[ "$OS" =~ archlinux ]]; then
     echo -e "${OR:-}--- PACMAN UPDATE ---${CL:-}"
-    PCT_UPGRADE "$PACMAN_ENVIRONMENT pacman -Su" "$PACMAN_ENVIRONMENT pacman -Su --noconfirm"
+    PCT_UPGRADE "$PACMAN_ENVIRONMENT pacman -Sy >/dev/null 2>&1; pacman -Qu || true" "$PACMAN_ENVIRONMENT pacman -Su --noconfirm"
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
@@ -944,7 +970,7 @@ UPDATE_CONTAINER () {
     echo
   elif [[ "$OS" =~ centos ]]; then
     echo -e "${OR:-}--- YUM UPDATE ---${CL:-}"
-    PCT_UPGRADE "yum update" "yum -y update"
+    PCT_UPGRADE "yum check-update || true" "yum -y update"
     if [[ $ERROR_CODE != "" ]]; then return; fi
     EXTRAS
     TRIM_FILESYSTEM
