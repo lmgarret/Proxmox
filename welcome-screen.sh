@@ -13,7 +13,7 @@ LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
 CHECK_OUTPUT=$(stat -c%s $LOCAL_FILES/check-output)
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+SERVER_URL="https://raw.githubusercontent.com/lmgarret/Proxmox/$BRANCH"
 
 # Colors
 OR="\e[1;33m"
@@ -22,9 +22,9 @@ CL="\e[0m"
 
 # Version Check
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > /root/update_master.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > /root/update_beta.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > /root/update_develop.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/master/update.sh > /root/update_master.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/beta/update.sh > /root/update_beta.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/develop/update.sh > /root/update_develop.sh
   MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_master.sh)
   BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_beta.sh)
   DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /root/update_develop.sh)
