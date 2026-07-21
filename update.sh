@@ -11,7 +11,7 @@ LOCAL_FILES="/etc/ultimate-updater"
 CONFIG_FILE="$LOCAL_FILES/update.conf"
 USER_SCRIPTS="/etc/ultimate-updater/scripts.d"
 BRANCH=$(awk -F'"' '/^USED_BRANCH=/ {print $2}' "$CONFIG_FILE")
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+SERVER_URL="https://raw.githubusercontent.com/lmgarret/Proxmox/$BRANCH"
 
 # Tag filter
 # shellcheck disable=SC1091
@@ -76,6 +76,19 @@ CHECK_INTERNET () {
   fi
 }
 
+# Ask user to confirm before updating (only when -a/--ask / CONFIRM_UPDATES)
+CONFIRM_UPDATE () {   # $1 = target label, e.g. "LXC 100"
+  if [[ "$CONFIRM_UPDATES" == true && "$HEADLESS" != true && "$RICM" != true ]]; then
+    echo -e "${OR:-}❔ Update $1?${CL:-}"
+    read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
+    if ! [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
+      echo -e "⏩${BL:-} Skipped $1 by the user${CL:-}\n\n"
+      return 1
+    fi
+  fi
+  return 0
+}
+
 ARGUMENTS () {
   while [[ $# -gt 0 ]]; do
     local ARGUMENT="$1"
@@ -94,6 +107,7 @@ ARGUMENTS () {
       -h|--help) USAGE; exit 0 ;;
       -v|--version) VERSION_CHECK; exit 0 ;;
       -s|--silent) HEADLESS=true ;;
+      -a|--ask) CONFIRM_UPDATES=true ;;
       -c) RICM=true ;;
       -w) WELCOME_SCREEN=true ;;
       host)
@@ -192,6 +206,7 @@ USAGE () {
     echo -e "{COMMAND}:"
     echo -e "========="
     echo -e "  -s --silent          Silent / Headless Mode"
+    echo -e "  -a --ask             Ask before each update (interactive confirm)"
     echo -e "  -h --help            Show help menu"
     echo -e "  -v --version         Show The Ultimate Updater version"
     echo -e "  -dist-upgrade        Run distribution upgrade (Debian 12 -> 13)"
@@ -207,9 +222,9 @@ USAGE () {
 
 # Version Check / Update Message in Header
 VERSION_CHECK () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/update.sh > $LOCAL_FILES/temp/update_master.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/update.sh > $LOCAL_FILES/temp/update_beta.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/update.sh > $LOCAL_FILES/temp/update_develop.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/master/update.sh > $LOCAL_FILES/temp/update_master.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/beta/update.sh > $LOCAL_FILES/temp/update_beta.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/develop/update.sh > $LOCAL_FILES/temp/update_develop.sh
   MASTER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_master.sh)
   BETA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_beta.sh)
   DEVELOP_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update_develop.sh)
@@ -223,7 +238,7 @@ VERSION_CHECK () {
         echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+          bash <(curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/master/install.sh) update
         fi
         echo
       fi
@@ -235,7 +250,7 @@ VERSION_CHECK () {
         echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/beta/install.sh) update
+          bash <(curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/beta/install.sh) update
         fi
         echo
       fi
@@ -247,7 +262,7 @@ VERSION_CHECK () {
         echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/develop/install.sh) update
+          bash <(curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/develop/install.sh) update
         fi
         echo
       fi
@@ -265,7 +280,7 @@ VERSION_CHECK () {
         echo -e "${OR:-}Want to update The Ultimate Updater first?${CL:-}"
         read -p "Type [Y/y] or Enter for yes - anything else will skip: " -r
         if [[ "$REPLY" =~ ^[Yy]$ || "$REPLY" = "" ]]; then
-          bash <(curl -s https://raw.githubusercontent.com/BassT23/Proxmox/master/install.sh) update
+          bash <(curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/master/install.sh) update
         fi
         echo
       fi
@@ -315,7 +330,7 @@ UPDATE () {
   echo -e "Update to $BRANCH branch?"
   read -p "Type [Y/y] or [Enter] for yes - anything else will exit: " -r
   if [[ $REPLY =~ ^[Yy]$ || $REPLY = "" ]]; then
-    bash <(curl -s "https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"/install.sh) update
+    bash <(curl -s "https://raw.githubusercontent.com/lmgarret/Proxmox/$BRANCH"/install.sh) update
   else
     exit 2
   fi
@@ -336,23 +351,23 @@ UNINSTALL () {
 
 # Get Server Versions
 STATUS () {
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
-  curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/"$BRANCH"/update.sh > $LOCAL_FILES/temp/update.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/"$BRANCH"/update-extras.sh > $LOCAL_FILES/temp/update-extras.sh
+  curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/"$BRANCH"/update.conf > $LOCAL_FILES/temp/update.conf
   SERVER_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.sh)
   SERVER_EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update-extras.sh)
   SERVER_CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/update.conf)
   EXTRA_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update-extras.sh)
   CONFIG_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/update.conf)
   if [[ "$WELCOME_SCREEN" == true ]]; then
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/welcome-screen.sh > $LOCAL_FILES/temp/welcome-screen.sh
-    curl -s https://raw.githubusercontent.com/BassT23/Proxmox/"$BRANCH"/check-updates.sh > $LOCAL_FILES/temp/check-updates.sh
+    curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/"$BRANCH"/welcome-screen.sh > $LOCAL_FILES/temp/welcome-screen.sh
+    curl -s https://raw.githubusercontent.com/lmgarret/Proxmox/"$BRANCH"/check-updates.sh > $LOCAL_FILES/temp/check-updates.sh
     SERVER_WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/welcome-screen.sh)
     SERVER_CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/temp/check-updates.sh)
     WELCOME_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' /etc/update-motd.d/01-welcome-screen)
     CHECK_UPDATE_VERSION=$(awk -F'"' '/^VERSION=/ {print $2}' $LOCAL_FILES/check-updates.sh)
   fi
-  MODIFICATION=$(curl -s https://api.github.com/repos/BassT23/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
+  MODIFICATION=$(curl -s https://api.github.com/repos/lmgarret/Proxmox | grep pushed_at | cut -d: -f2- | cut -c 3- | rev | cut -c 3- | rev)
   echo -e "Last modification (on GitHub): $MODIFICATION\n"
   if [[ "$BRANCH" == master ]]; then echo -e "${OR:-}  Version overview${CL:-}"; else
     echo -e "${OR:-}  Version overview ($BRANCH)${CL:-}"
@@ -405,6 +420,8 @@ READ_CONFIG () {
   CHECK_URL_EXE="${CHECK_URL_EXE:-ping}"
   SSH_PORT=$(awk -F'"' '/^SSH_PORT=/ {print $2}' "$CONFIG_FILE")
   EXIT_ON_ERROR=$(awk -F'"' '/^EXIT_ON_ERROR=/ {print $2}' "$CONFIG_FILE")
+  CONFIRM_UPDATES=$(awk -F'"' '/^CONFIRM_UPDATES=/ {print $2}' "$CONFIG_FILE")
+  CONFIRM_UPDATES="${CONFIRM_UPDATES:-false}"
   WITH_HOST=$(awk -F'"' '/^WITH_HOST=/ {print $2}' "$CONFIG_FILE")
   WITH_LXC=$(awk -F'"' '/^WITH_LXC=/ {print $2}' "$CONFIG_FILE")
   WITH_VM=$(awk -F'"' '/^WITH_VM=/ {print $2}' "$CONFIG_FILE")
@@ -740,6 +757,7 @@ UPDATE_HOST () {
 
 # shellcheck disable=SC2015
 UPDATE_HOST_ITSELF () {
+  if ! CONFIRM_UPDATE "Host ($HOSTNAME)"; then return; fi
   echo -e "${OR:-}--- PVE UPDATE ---${CL:-}" && pveupdate || true
   if [[ "$HEADLESS" == true ]]; then
     echo -e "\n${OR:-}--- APT UPGRADE HEADLESS ---${CL:-}" && \
@@ -784,6 +802,7 @@ CONTAINER_UPDATE_START () {
       echo -e "⏩ ${OR:-}LXC $CONTAINER is a template - skip update${CL:-}\n\n"
       continue
     else
+      if ! CONFIRM_UPDATE "LXC $CONTAINER"; then continue; fi
       STATUS=$(pct status "$CONTAINER")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_CONTAINER" == true ]]; then
         # Start the container
@@ -947,6 +966,7 @@ VM_UPDATE_START () {
       echo -e "⚠ ${BL:-} Skipped VM $VM${CL:-}\n"
       echo -e "${OR:-}  Windows is not supported for now.\n  I'm working on it ;)${CL:-}\n\n"
     else
+      if ! CONFIRM_UPDATE "VM $VM"; then continue; fi
       STATUS=$(qm status "$VM")
       if [[ "$STATUS" == "status: stopped" && "$STOPPED_VM" == true ]]; then
         # Check if update is possible

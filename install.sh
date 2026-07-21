@@ -15,7 +15,7 @@ BRANCH="master"
 # Variable / Function
 LOCAL_FILES="/etc/ultimate-updater"
 TEMP_FOLDER="/root/Ultimate-Updater-Temp"
-SERVER_URL="https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH"
+SERVER_URL="https://raw.githubusercontent.com/lmgarret/Proxmox/$BRANCH"
 
 #Colors
 BL="\e[36m"
@@ -174,7 +174,7 @@ ${OR:-}Is it OK for you, or want to backup your files first?${CL:-}\n"
   rm -rf /etc/update-motd.d/01-updater.bak || true
   # Check and renew to new structure
   if [[ -f /usr/local/bin/update ]] && [[ ! -f /usr/local/sbin/update ]]; then
-    curl  -s -L https://raw.githubusercontent.com/BassT23/Proxmox/$BRANCH/update.sh > $LOCAL_FILES/update.sh
+    curl  -s -L https://raw.githubusercontent.com/lmgarret/Proxmox/$BRANCH/update.sh > $LOCAL_FILES/update.sh
     chmod 750 $LOCAL_FILES/update.sh
     ln -sf $LOCAL_FILES/update.sh /usr/local/sbin/update
     rm /usr/local/bin/update
@@ -199,7 +199,7 @@ INSTALL () {
     mkdir -p $LOCAL_FILES/scripts.d/000
     # Download latest release
     if ! [[ -d $TEMP_FOLDER ]];then mkdir $TEMP_FOLDER; fi
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      curl -s https://api.github.com/repos/lmgarret/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
       tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
       rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
       TEMP_FILES=$TEMP_FOLDER
@@ -238,11 +238,11 @@ UPDATE () {
     # Download files
     if ! [[ -d $TEMP_FOLDER ]]; then mkdir $TEMP_FOLDER; fi
     if [[ "$BRANCH" == master ]]; then
-      curl -s https://api.github.com/repos/BassT23/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
+      curl -s https://api.github.com/repos/lmgarret/Proxmox/releases/latest | grep "browser_download_url" | cut -d : -f 2,3 | tr -d \" | wget -i - -q -O $TEMP_FOLDER/ultimate-updater.tar.gz
     elif [[ "$BRANCH" == beta ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/beta > $TEMP_FOLDER/ultimate-updater.tar.gz
+      curl -s -L https://github.com/lmgarret/Proxmox/tarball/beta > $TEMP_FOLDER/ultimate-updater.tar.gz
     elif [[ "$BRANCH" == develop ]]; then
-      curl -s -L https://github.com/BassT23/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
+      curl -s -L https://github.com/lmgarret/Proxmox/tarball/develop > $TEMP_FOLDER/ultimate-updater.tar.gz
     fi
     tar -zxf $TEMP_FOLDER/ultimate-updater.tar.gz -C $TEMP_FOLDER
     rm -rf $TEMP_FOLDER/ultimate-updater.tar.gz || true
